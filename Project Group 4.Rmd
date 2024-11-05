@@ -1,0 +1,53 @@
+---
+title: "ADS506 Time-Series Project - Forecasting Rainfall"
+team number: 4
+output: pdf_document
+---
+
+https://www.kaggle.com/datasets/jsphyg/weather-dataset-rattle-package
+
+\newpage
+
+```{r warning=FALSE, message=FALSE}
+library(ggplot2)
+library(readr)
+library(dplyr)
+```
+
+## Importing the Data
+
+```{r}
+weather_data <- read.csv("/Users/bobbymarriott/Desktop/ADS-506/weatherAUS.csv")
+```
+
+## Time Series Plot
+
+```{r}
+# Convert Date to Date type and remove rows with NA in Date or Rainfall
+weather_data$Date <- as.Date(weather_data$Date, format="%Y-%m-%d")
+weather_data <- weather_data %>% filter(!is.na(Date) & !is.na(Rainfall))
+
+# Filter for the selected cities
+selected_cities <- c("Sydney", "Perth", "Darwin", "Melbourne")
+weather_data <- weather_data %>% filter(Location %in% selected_cities)
+
+# Aggregate data to get monthly rainfall totals
+monthly_rainfall <- weather_data %>%
+  group_by(Location, Month = as.Date(format(Date, "%Y-%m-01"))) %>%
+  summarize(MonthlyRainfall = sum(Rainfall, na.rm = TRUE))
+
+# Plot monthly rainfall for each city
+ggplot(monthly_rainfall, aes(x = Month, y = MonthlyRainfall, color = Location)) +
+  geom_line(size = 0.5) +
+  labs(title = "Monthly Rainfall Comparison for Sydney, Perth, Darwin, and Melbourne",
+       x = "Date",
+       y = "Total Monthly Rainfall (mm)",
+       color = "City") +
+  theme_minimal()
+```
+
+## Discussion
+
+This dataset provides monthly aggregated rainfall data collected over 10 years from weather stations across Australia. Key variables include total monthly rainfall, minimum temperature, and the target variable RainTomorrow, making it well-suited for examining long-term rainfall trends. The graph above displays monthly rainfall for Sydney, Perth, Darwin, and Melbourne, revealing notable variability, with Darwin showing significantly higher peaks compared to the other cities, indicating periods of intense rainfall.
+
+Monthly rainfall trends across these cities offer valuable insights for sectors like agriculture and water management, where understanding variability in rainfall affects planning and resource allocation. By focusing on monthly patterns, we can better anticipate significant changes in rainfall, enabling industries to prepare for drought conditions or mitigate damage from heavy rainfall events. This city-level comparison highlights regional differences in rainfall, which are crucial for localized decision-making and risk management. 
