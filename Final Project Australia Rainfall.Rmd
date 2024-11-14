@@ -1,0 +1,123 @@
+---
+title: "ADS506 Project Australia Rainfall Forecast"
+author: "Marinela Inguito, Jose Guarneros, Robert Marriott"
+date: "13 November 2024`"
+output: pdf_document
+---
+
+```{r warning=FALSE, message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(tidyr)
+```
+
+## Importing the Data
+
+```{r}
+weather_data <- read.csv("/Users/bobbymarriott/Desktop/ADS-506/weatherAUS.csv")
+```
+
+## Preview of Data
+
+```{r}
+str(weather_data)      # Structure of the dataset
+summary(weather_data)  # Summary statistics for each column
+head(weather_data)     
+```
+## Data Preprocessing
+## Convert Date Column
+
+```{r}
+weather_data$Date <- as.Date(weather_data$Date, format = "%Y-%m-%d")
+```
+
+## Relevant Columns
+
+```{r}
+weather_data <- weather_data %>%
+  select(Date, Location, Rainfall, MinTemp, MaxTemp, RainTomorrow)
+```
+
+## Specific Cities Filtered
+
+```{r}
+cities <- c("Sydney", "Perth", "Darwin", "Melbourne")
+weather_data <- weather_data %>% filter(Location %in% cities)
+```
+
+## Data Cleaning
+## Missing Values?
+
+```{r}
+colSums(is.na(weather_data))
+```
+
+## Drop rows with missing Values from Rainfall or RainTomorrow
+
+```{r}
+weather_data <- weather_data %>% drop_na(Rainfall, RainTomorrow)
+```
+
+## Impute other columns using the mean
+
+```{r}
+weather_data$MinTemp[is.na(weather_data$MinTemp)] <- mean(weather_data$MinTemp, na.rm = TRUE)
+weather_data$MaxTemp[is.na(weather_data$MaxTemp)] <- mean(weather_data$MaxTemp, na.rm = TRUE)
+```
+
+## Verify Data Types
+
+```{r}
+str(weather_data)  # Confirm all variables have correct data types
+```
+
+## Splitting Data?
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+## Exploratory Data Analysis?
+
+```{r}
+
+```
+
+
+
+
+
+```{r}
+
+```
+
+
+
+
+
+```{r}
+
+```
+
+
+
+
+
+```{r}
+
+```
+
+
+
+
+
+```{r}
+
+```
+
