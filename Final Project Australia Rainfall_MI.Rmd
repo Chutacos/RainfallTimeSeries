@@ -1,0 +1,217 @@
+---
+title: "ADS506 Project Australia Rainfall Forecast"
+author: "Marinela Inguito, Jose Guarneros, Robert Marriott"
+date: "13 November 2024`"
+output: pdf_document
+---
+
+```{r warning=FALSE, message=FALSE}
+library(dplyr)
+library(ggplot2)
+library(lubridate)
+library(tidyr)
+```
+
+## Importing the Data
+
+```{r}
+weather_data <- read.csv("C:/Users/16302/OneDrive/Documents/ADS506 Applied Time Series Analysis/weatherAUS.csv")
+
+```
+
+## Preview of Data
+
+```{r}
+str(weather_data)      # Structure of the dataset
+summary(weather_data)  # Summary statistics for each column
+head(weather_data)     
+```
+## Data Preprocessing
+## Convert Date Column
+
+```{r}
+weather_data$Date <- as.Date(weather_data$Date, format = "%Y-%m-%d")
+```
+
+## Relevant Columns
+
+```{r}
+weather_data <- weather_data %>%
+  select(Date, Location, Rainfall, MinTemp, MaxTemp, RainTomorrow)
+```
+
+## Specific Cities Filtered
+
+```{r}
+cities <- c("Sydney", "Perth", "Darwin", "Melbourne")
+weather_data <- weather_data %>% filter(Location %in% cities)
+```
+
+## Data Cleaning
+## Missing Values?
+
+```{r}
+colSums(is.na(weather_data))
+```
+
+## Drop rows with missing Values from Rainfall or RainTomorrow
+
+```{r}
+weather_data <- weather_data %>% drop_na(Rainfall, RainTomorrow)
+```
+
+## Impute other columns using the mean
+
+```{r}
+weather_data$MinTemp[is.na(weather_data$MinTemp)] <- mean(weather_data$MinTemp, na.rm = TRUE)
+weather_data$MaxTemp[is.na(weather_data$MaxTemp)] <- mean(weather_data$MaxTemp, na.rm = TRUE)
+```
+
+## Verify Data Types
+
+```{r}
+str(weather_data)  # Confirm all variables have correct data types
+colnames(weather_data)
+```
+
+## Time Series Plot
+
+```{r}
+ggplot(weather_data, aes(x = Date, y = Rainfall)) +
+  geom_line(color = "blue") +
+  labs(title = "Rainfall Over Time", x = "Date", y = "Rainfall (mm)") +
+  theme_minimal()
+```
+
+# Aggregate Data by Month for Seasonal Trends
+
+```{r}
+weather_data$Month <- format(weather_data$Date, "%m")
+
+seasonal_trends <- weather_data %>%
+  group_by(Month) %>%
+  summarise(AvgRainfall = mean(Rainfall, na.rm = TRUE))
+
+ggplot(seasonal_trends, aes(x = as.numeric(Month), y = AvgRainfall)) +
+  geom_line(color = "green") +
+  labs(title = "Seasonal Trend in Rainfall", x = "Month", y = "Average Rainfall (mm)") +
+  scale_x_continuous(breaks = 1:12, labels = month.abb) +
+  theme_minimal()
+```
+
+## Facet by Location
+
+```{r}
+# Facet Plot for Rainfall by Location
+ggplot(weather_data, aes(x = Date, y = Rainfall)) +
+  geom_line(color = "darkblue") +
+  facet_wrap(~Location, scales = "free_y") +
+  labs(title = "Rainfall Over Time by Location", x = "Date", y = "Rainfall (mm)") +
+  theme_minimal()
+```
+
+## Multiple cities in one plot - line plots
+
+```{r}
+# Filter data for multiple cities
+cities_data <- weather_data %>%
+  filter(Location %in% c("Sydney", "Melbourne", "Brisbane", "Perth"))
+
+# Line plot for multiple cities on the same plot
+ggplot(cities_data, aes(x = Date, y = Rainfall, color = Location)) +
+  geom_line(size = 1) +
+  labs(title = "Rainfall Over Time in Australian Cities", x = "Date", y = "Rainfall (mm)") +
+  theme_minimal() +
+  scale_color_manual(values = c("Sydney" = "blue", "Melbourne" = "red", "Brisbane" = "green", "Perth" = "purple"))
+```
+
+## Difference
+
+```{r}
+# Perform Differencing for Numeric Columns (Rainfall, MinTemp, MaxTemp)
+weather_data <- weather_data %>%
+  group_by(Location) %>%
+  mutate(
+    Diff_Rainfall = c(NA, diff(Rainfall)),
+    Diff_MinTemp = c(NA, diff(MinTemp)),
+    Diff_MaxTemp = c(NA, diff(MaxTemp))
+  ) %>%
+  ungroup()
+
+# Drop Rows with NA (optional)
+# You may drop rows with NA resulting from differencing or keep them for modeling compatibility
+weather_data <- weather_data %>% drop_na()
+
+# Check Stationarity Using ADF Test (Example for Diff_Rainfall in a Specific Location)
+# Change 'Sydney' to any specific location you want to analyze
+adf_test_result <- adf.test(weather_data$Diff_Rainfall[weather_data$Location == "Sydney"], alternative = "stationary")
+
+# Print ADF Test Results
+print(adf_test_result)
+
+# Visualize the Differenced Data (Optional)
+library(ggplot2)
+
+ggplot(weather_data[weather_data$Location == "Sydney", ], aes(x = Date, y = Diff_Rainfall)) +
+  geom_line() +
+  labs(
+    title = "Differenced Rainfall for Sydney",
+    x = "Date",
+    y = "Differenced Rainfall"
+  ) +
+  theme_minimal()
+```
+
+```{r}
+
+```
+
+## Splitting Data?
+
+```{r}
+
+```
+
+
+```{r}
+
+```
+
+## Exploratory Data Analysis?
+
+```{r}
+
+```
+
+
+
+
+
+```{r}
+
+```
+
+
+
+
+
+```{r}
+
+```
+
+
+
+
+
+```{r}
+
+```
+
+
+
+
+
+```{r}
+
+```
+
