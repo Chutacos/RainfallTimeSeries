@@ -10,13 +10,16 @@ library(dplyr)
 library(ggplot2)
 library(lubridate)
 library(tidyr)
+library(tsibble)
+library(tseries)
+library(feasts)
 ```
 
 ## Importing the Data
 
 ```{r}
-weather_data <- read.csv("C:/Users/16302/OneDrive/Documents/ADS506 Applied Time Series Analysis/weatherAUS.csv")
-
+weather_data <- read.csv("weatherAUS.csv")
+str(weather_data$Date)
 ```
 
 ## Preview of Data
@@ -31,6 +34,7 @@ head(weather_data)
 
 ```{r}
 weather_data$Date <- as.Date(weather_data$Date, format = "%Y-%m-%d")
+str(weather_data$Date)
 ```
 
 ## Relevant Columns
@@ -75,16 +79,15 @@ colnames(weather_data)
 ```
 
 ## Time Series Plot
-
 ```{r}
-ggplot(weather_data, aes(x = Date, y = Rainfall)) +
-  geom_line(color = "blue") +
+weather_data |>
+ggplot(aes(x = Date, y = Rainfall)) +
+  geom_line() +
   labs(title = "Rainfall Over Time", x = "Date", y = "Rainfall (mm)") +
   theme_minimal()
 ```
 
 # Aggregate Data by Month for Seasonal Trends
-
 ```{r}
 weather_data$Month <- format(weather_data$Date, "%m")
 
@@ -100,14 +103,13 @@ ggplot(seasonal_trends, aes(x = as.numeric(Month), y = AvgRainfall)) +
 ```
 
 ## Facet by Location
-
 ```{r}
 # Facet Plot for Rainfall by Location
 ggplot(weather_data, aes(x = Date, y = Rainfall)) +
   geom_line(color = "darkblue") +
   facet_wrap(~Location, scales = "free_y") +
-  labs(title = "Rainfall Over Time by Location", x = "Date", y = "Rainfall (mm)") +
-  theme_minimal()
+  theme_minimal() +
+  labs(title = "Rainfall Over Time by Location", x = "Date", y = "Rainfall (mm)") 
 ```
 
 ## Multiple cities in one plot - line plots
@@ -163,24 +165,72 @@ ggplot(weather_data[weather_data$Location == "Sydney", ], aes(x = Date, y = Diff
 ```
 
 ```{r}
-
 ```
 
 ## Splitting Data?
 
 ```{r}
+max(weather_data$Date)
+min(weather_data$Date)
+
+train <- weather_data |>
+  filter(Date >= as.Date("2008-02-03") & Date <= as.Date("2015-06-24") )
+
+test <- weather_data |>
+  filter(Date >= as.Date("2015-06-25") & Date <= as.Date("2017-06-25"))
 
 ```
 
 
 ```{r}
+weekly_rainfall <- train |>
+  mutate(Week = floor_date(Date, "week")) |>
+  group_by(Week) |>                          
+  summarize(WeeklyRainfall = sum(Rainfall, na.rm = TRUE))
+
+weekly_rainfall_test <- test |>
+  mutate(Week = floor_date(Date, "week")) |>
+  group_by(Week) |>                          
+  summarize(WeeklyRainfall = sum(Rainfall, na.rm = TRUE))
+
+weekly_rainfall |>
+  ggplot(aes(x = Week, y = WeeklyRainfall)) +
+  geom_line() +
+  theme_minimal() +
+  labs(title = "Railfall over time", x = "Date", y = "Rainfall")
+
+weekly_rainfall_test |>
+  ggplot(aes(x = Week, y = WeeklyRainfall)) +
+  geom_line() +
+  theme_minimal() +
+  labs(title = "Railfall over time (Test set)", x = "Date", y = "Rainfall")
 
 ```
 
 ## Exploratory Data Analysis?
 
 ```{r}
+train <- train |>
+  group_by(Date) |>
+  summarize(Rainfall = sum(Rainfall, na.rm = TRUE)) |>  # Aggregate rainfall
+  ungroup()
 
+train <- train |>
+  distinct(Date, .keep_all = TRUE)
+
+train <- train |>
+  mutate(Diff_Rainfall = difference(Rainfall)) |>
+  filter(!is.na(Diff_Rainfall)) |>
+  as_tsibble(index = Date) |>
+  fill_gaps()
+
+acf_plot <- train |>
+  ACF(Diff_Rainfall) |>
+  autoplot() +
+  labs(title = "ACF of Differenced Weekly Rainfall", y = "ACF", x = "Lag") +
+  theme_minimal()
+
+acf_plot
 ```
 
 
