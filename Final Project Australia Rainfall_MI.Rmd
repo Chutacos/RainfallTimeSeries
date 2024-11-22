@@ -37,6 +37,12 @@ head(weather_data)
 weather_data$Date <- as.Date(weather_data$Date, format = "%Y-%m-%d")
 str(weather_data$Date)
 ```
+## Arrange the date
+
+```{r}
+weather_data <- weather_data %>%
+  arrange(Date)
+```
 
 ## Relevant Columns Filtered
 
@@ -236,34 +242,4 @@ acf_plot
 ```
 
 
-
-
-
-```{r}
-
-```
-
-
-
-
-
-```{r}
-
-```
-
-
-
-
-
-```{r}
-
-```
-
-
-
-
-
-```{r}
-
-```
 
