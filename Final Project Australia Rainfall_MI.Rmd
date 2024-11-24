@@ -14,6 +14,7 @@ library(tsibble)
 library(tseries)
 library(feasts)
 library(fpp3)
+library(corrplot)
 ```
 
 ## Importing the Data
@@ -41,55 +42,127 @@ str(weather_data$Date)
 ## Arrange the date
 
 ```{r}
-weather_data <- weather_data %>%
+weather_data <- weather_data |>
   arrange(Date)
+
+# Group by Date and calculate the mean of Rainfall
+rainfall_by_date <- weather_data |>
+  group_by(Date) |>
+  summarise(mean_rainfall = mean(Rainfall, na.rm = TRUE))
+
+# Plot the data
+ggplot(rainfall_by_date, aes(x = Date, y = mean_rainfall)) +
+  geom_line() +
+  labs(title = "Mean Rainfall by Date", x = "Date", y = "Mean Rainfall (mm)") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  theme(plot.margin = margin(1, 1, 1, 1, "cm"))
+```
+```{r}
+# Numeric features
+numeric_features <- weather_data[c("MinTemp", "MaxTemp", "Rainfall", "Evaporation", "Sunshine", 
+                                   "WindGustSpeed", "WindSpeed9am", "WindSpeed3pm", "Humidity9am", 
+                                   "Humidity3pm", "Pressure9am", "Pressure3pm", "Cloud9am", 
+                                   "Cloud3pm", "Temp9am", "Temp3pm")]
+
+# Calculate the correlation matrix for all numeric columns
+cor_matrix <- cor(numeric_features, use = "complete.obs")
+
+# Correlation matrix
+corrplot(cor_matrix, 
+         method = "color",  
+         col = colorRampPalette(c("blue", "white", "red"))(200),  
+         title = "Correlation Matrix Heatmap",  
+         tl.cex = 0.8,  
+         cl.cex = 0.8,  
+         addCoef.col = NULL,  
+         number.cex = 0.8,  
+         diag = FALSE,  
+         tl.col = "black")  
+```
+## Corr Plot shows that Features MinTemp, WindGustSpeed columns, Humidity columns, and Cloud columns have notable corrrelations to Rainfall
+
+## Scatter plot features vs Rainfall
+
+```{r}
+# List of features to plot against Rainfall
+features <- c("MinTemp", "MaxTemp", "Evaporation", "Sunshine", 
+              "WindGustSpeed", "WindSpeed9am", "WindSpeed3pm", 
+              "Humidity9am", "Humidity3pm", "Pressure9am", 
+              "Pressure3pm", "Cloud9am", "Cloud3pm", "Temp9am", 
+              "Temp3pm")
+
+# Check for missing values in these columns and impute the mean if there are any
+weather_data[features] <- suppressWarnings(weather_data[features] |>
+  mutate(across(
+    all_of(features),  
+    ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)  
+  )))
+
+# Verify that missing values have been handled
+colSums(is.na(weather_data[features]))
+
+# Create scatter plots for each feature vs Rainfall
+for (feature in features) {
+  plot <- ggplot(weather_data, aes_string(x = feature, y = "Rainfall")) +
+    geom_point() +
+    labs(title = paste("Scatter Plot of", feature, "vs Rainfall"),
+         x = feature,
+         y = "Rainfall") +
+    theme_minimal()
+  print(plot)
+}
 ```
 
 ## Relevant Columns Filtered
 
 ```{r}
-weather_data <- weather_data |>
-  select(Date, Location, Rainfall, MinTemp, MaxTemp, RainTomorrow)
+## Relevant features based on corr plot above: 
+## "MinTemp", "WindGustSpeed", "WindSpeed9am", "WindSpeed3pm", "Humidity9am", "Humidity3pm", "Cloud9am", "Cloud3pm"
+
+weather_data_mod <- weather_data |>
+  select(Date, Location, Rainfall, MinTemp, WindGustSpeed, WindSpeed9am, WindSpeed3pm,Humidity9am, Humidity3pm,Cloud9am,Cloud3pm, RainTomorrow)
 ```
 
 ## Specific Cities Filtered
 
 ```{r}
 cities <- c("Sydney", "Perth", "Darwin", "Melbourne")
-weather_data <- weather_data |> filter(Location %in% cities)
+weather_data_mod <- weather_data_mod |> filter(Location %in% cities)
 ```
 
 ## Data Cleaning
 ## Handle Missing Values
 
 ```{r}
-colSums(is.na(weather_data))
+colSums(is.na(weather_data_mod))
 ```
 
 ## Drop rows with missing Values from Rainfall or RainTomorrow
 
 ```{r}
-weather_data <- weather_data |> drop_na(Rainfall, RainTomorrow)
+weather_data_mod <- weather_data_mod |> drop_na(Rainfall, RainTomorrow)
 ```
 
 ## Impute other columns using the mean
 
 ```{r}
-weather_data$MinTemp[is.na(weather_data$MinTemp)] <- mean(weather_data$MinTemp, na.rm = TRUE)
-weather_data$MaxTemp[is.na(weather_data$MaxTemp)] <- mean(weather_data$MaxTemp, na.rm = TRUE)
+weather_data_mod$MinTemp[is.na(weather_data_mod$MinTemp)] <- mean(weather_data_mod$MinTemp, na.rm = TRUE)
+weather_data_mod$MaxTemp[is.na(weather_data_mod$MaxTemp)] <- mean(weather_data_mod$MaxTemp, na.rm = TRUE)
 ```
 
 ## Verify Data Types
 
 ```{r}
-str(weather_data)  # Confirm all variables have correct data types
-colnames(weather_data)
+str(weather_data_mod)  # Confirm all variables have correct data types
+colnames(weather_data_mod)
 ```
 
 ## Aggregate Weekly Rainfall
 
 ```{r}
-weather_data_weekly <- weather_data |>
+weather_data_weekly <- weather_data_mod |>
   mutate(Week = floor_date(Date, "week")) |>
   group_by(Location, Week) |>
   summarize(WeeklyRainfall = sum(Rainfall, na.rm = TRUE)) |>
@@ -99,7 +172,7 @@ weather_data_weekly <- weather_data |>
 ## Differencing for stationarity
 
 ```{r}
-weather_data <- weather_data |>
+weather_data_mod<- weather_data_mod |>
   group_by(Location) |>
   mutate(Diff_Rainfall = c(NA, diff(Rainfall))) |>
   ungroup()
@@ -108,27 +181,27 @@ weather_data <- weather_data |>
 ## Remove rows with N/A
 
 ```{r}
-weather_data <- weather_data |>
+weather_data_mod <- weather_data_mod |>
   drop_na()
 
-head(weather_data)
+head(weather_data_mod)
 ```
 ## Time Series Plot
 
 ```{r}
 # Filter data for a specific location (e.g., Sydney)
-sydney_weather <- weather_data %>%
-  filter(Location == "Sydney") %>%
-  select(Date, Rainfall) %>%
+sydney_weather <- weather_data_mod |>
+  filter(Location == "Sydney") |>
+  select(Date, Rainfall) |>
   drop_na(Rainfall)
 
 # Convert to tsibble
-sydney_weather_tsibble <- sydney_weather %>%
-  mutate(Date = yearmonth(Date)) %>%
+sydney_weather_tsibble <- sydney_weather |>
+  mutate(Date = yearmonth(Date)) |>
   as_tsibble(index = Date)
 
 # Plot the time series using autoplot
-sydney_weather_tsibble %>%
+sydney_weather_tsibble |>
   autoplot(Rainfall) +
   labs(title = "Rainfall Time Series for Sydney",
        x = "Time",
@@ -138,31 +211,26 @@ sydney_weather_tsibble %>%
 ```
 
 
-
-
-## Update the code below after fixing time series plot
-
-
 ## Split data by city
 
 ```{r}
-weather_data_splits <- split(weather_data, weather_data$Location)
+weather_data_splits <- split(weather_data_mod, weather_data_mod$Location)
 ```
 
 ## Perform decomposition of each city next
 
 ```{r}
 sydney_data <- weather_data_splits$Sydney
-sydney_ts <- sydney_data %>%
-  as_tsibble(index = Date) %>%
+sydney_ts <- sydney_data |>
+  as_tsibble(index = Date) |>
   fill_gaps()
 ```
 
 # Perform Decomposition Sydney
 
 ```{r}
-sydney_decomposition <- sydney_ts %>%
-  model(STL(Rainfall ~ season(window = 13))) %>%
+sydney_decomposition <- sydney_ts |>
+  model(STL(Rainfall ~ season(window = 13))) |>
   components()
 ```
 
@@ -176,8 +244,8 @@ autoplot(sydney_decomposition) +
 # acf plot Sydney
 
 ```{r}
-acf_plot_Sydney <- sydney_ts %>%
-  ACF(Rainfall) %>%
+acf_plot_Sydney <- sydney_ts |>
+  ACF(Rainfall) |>
   autoplot() +
   labs(title = "ACF of Rainfall in Sydney", y = "ACF", x = "Lag") +
   theme_minimal()
@@ -191,13 +259,13 @@ acf_plot_Sydney
 ## Splitting Data?
 
 ```{r}
-max(weather_data$Date)
-min(weather_data$Date)
+max(weather_data_mod$Date)
+min(weather_data_mod$Date)
 
-train <- weather_data |>
+train <- weather_data_mod |>
   filter(Date >= as.Date("2008-02-03") & Date <= as.Date("2015-06-24") )
 
-test <- weather_data |>
+test <- weather_data_mod |>
   filter(Date >= as.Date("2015-06-25") & Date <= as.Date("2017-06-25"))
 
 ```
