@@ -13,6 +13,7 @@ library(tidyr)
 library(tsibble)
 library(tseries)
 library(feasts)
+library(fpp3)
 ```
 
 ## Importing the Data
@@ -112,23 +113,35 @@ weather_data <- weather_data |>
 
 head(weather_data)
 ```
-
 ## Time Series Plot
 
 ```{r}
-weather_data_ts <- weather_data |>
-  mutate(Date = yearmonth(Date)) |>  
-  as_tsibble(index = Date, key = Location)
+# Filter data for a specific location (e.g., Sydney)
+sydney_weather <- weather_data %>%
+  filter(Location == "Sydney") %>%
+  select(Date, Rainfall) %>%
+  drop_na(Rainfall)
 
-# Plot the Rainfall over Time
-weather_data_ts |>
-  autoplot(Rainfall) + 
-  labs(title = "Rainfall Over Time by Week", 
-       x = "Date", 
-       y = "Rainfall (mm)") + 
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+# Convert to tsibble
+sydney_weather_tsibble <- sydney_weather %>%
+  mutate(Date = yearmonth(Date)) %>%
+  as_tsibble(index = Date)
+
+# Plot the time series using autoplot
+sydney_weather_tsibble %>%
+  autoplot(Rainfall) +
+  labs(title = "Rainfall Time Series for Sydney",
+       x = "Time",
+       y = "Rainfall (mm)") +
+  theme_minimal()
+
 ```
+
+
+
+
+## Update the code below after fixing time series plot
+
 
 ## Split data by city
 
