@@ -21,6 +21,7 @@ library(Metrics)
 library(xgboost)
 library(fastDummies)
 library(caret)
+library(forecast)
 ```
 
 ## Importing the Data
@@ -451,4 +452,106 @@ head(test_darwin)
 str(train_perth)
 ```
 
+## ARIMA/SARIMA
+```{r}
+# Initialize an empty list to store results
+arima_results <- list()
 
+# Loop through each city
+for (city in names(weather_data_splits)) {
+  # Extract the city's data
+  city_data <- weather_data_splits[[city]] |>
+    as_tsibble(index = Date)
+  
+  # Ensure no missing values
+  city_data <- city_data |>
+    mutate(Rainfall = replace_na(Rainfall, 0))  # Replace NAs with zeros or use interpolation
+  
+  # Fit ARIMA model
+  arima_model <- auto.arima(city_data$Rainfall, seasonal = TRUE)
+  
+  # Forecast next 12 months
+  forecast_arima <- forecast(arima_model, h = 12)
+  
+  # Store results in the list
+  arima_results[[city]] <- list(
+    model = arima_model,
+    forecast = forecast_arima
+  )
+}
+
+# Print summaries of models for each city
+for (city in names(arima_results)) {
+  cat("\nCity:", city, "\n")
+  print(summary(arima_results[[city]]$model))
+}
+
+# Create a combined forecast plot
+forecast_plots <- lapply(names(arima_results), function(city) {
+  forecast_data <- arima_results[[city]]$forecast
+  autoplot(forecast_data) +
+    labs(title = paste("ARIMA Forecast for", city, "Rainfall"),
+         x = "Time",
+         y = "Rainfall (mm)") +
+    theme_minimal()
+})
+
+# Combine and display all plots using patchwork
+Reduce(`/`, forecast_plots)
+```
+
+## Linear Regression
+```{r}
+# Initialize an empty list to store results
+linear_regression_results <- list()
+
+# Loop through each city
+for (city in names(weather_data_splits)) {
+  # Extract the city's data
+  city_data <- weather_data_splits[[city]]
+  
+  # Ensure no missing values in predictors
+  predictors <- c("MinTemp", "AvgWindSpeed", "AvgHumidity", "AvgPressure", "AvgCloud", "MaxTemp")
+  city_data[predictors] <- city_data[predictors] |>
+    mutate(across(everything(), ~ ifelse(is.na(.), mean(., na.rm = TRUE), .)))  # Impute missing values
+  
+  # Fit linear regression model
+  lm_model <- lm(Rainfall ~ MinTemp + AvgWindSpeed + AvgHumidity + AvgPressure + AvgCloud + MaxTemp, data = city_data)
+  
+  # Store the model and summary in the results list
+  linear_regression_results[[city]] <- list(
+    model = lm_model,
+    summary = summary(lm_model)
+  )
+}
+
+# Print summaries of models for each city
+for (city in names(linear_regression_results)) {
+  cat("\nCity:", city, "\n")
+  print(linear_regression_results[[city]]$summary)
+}
+
+library(ggplot2)
+
+# Create prediction plots for each city
+prediction_plots <- lapply(names(weather_data_splits), function(city) {
+  # Extract city data and model
+  city_data <- weather_data_splits[[city]]
+  lm_model <- linear_regression_results[[city]]$model
+  
+  # Add predicted values to the city data
+  city_data$PredictedRainfall <- predict(lm_model, newdata = city_data)
+  
+  # Generate plot
+  ggplot(city_data, aes(x = Rainfall, y = PredictedRainfall)) +
+    geom_point(alpha = 0.6) +
+    geom_abline(intercept = 0, slope = 1, color = "red") +
+    labs(title = paste("Actual vs. Predicted Rainfall for", city),
+         x = "Actual Rainfall (mm)",
+         y = "Predicted Rainfall (mm)") +
+    theme_minimal()
+})
+
+# Combine and display all plots using patchwork
+Reduce(`/`, prediction_plots)
+```
