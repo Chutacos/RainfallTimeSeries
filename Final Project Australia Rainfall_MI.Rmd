@@ -271,16 +271,16 @@ sydney_ts <- sydney_data |>
 # Perform Decomposition Sydney
 
 ```{r}
-sydney_decomposition <- sydney_ts |>
-  model(STL(Rainfall ~ season(window = 13))) |>
-  components()
+##sydney_decomposition <- sydney_ts |>
+  ##model(STL(Rainfall ~ season(window = 13))) |>
+  ##components()
 ```
 
 # Plot Decomposition
 
 ```{r}
-autoplot(sydney_decomposition) +
-  labs(title = "STL Decomposition of Rainfall in Sydney", y = "")
+##autoplot(sydney_decomposition) +
+  ##labs(title = "STL Decomposition of Rainfall in Sydney", y = "")
 ```
 
 # acf plot Sydney
@@ -531,7 +531,6 @@ for (city in names(linear_regression_results)) {
   print(linear_regression_results[[city]]$summary)
 }
 
-library(ggplot2)
 
 # Create prediction plots for each city
 prediction_plots <- lapply(names(weather_data_splits), function(city) {
