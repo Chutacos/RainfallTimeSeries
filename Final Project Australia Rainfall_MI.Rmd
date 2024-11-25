@@ -15,6 +15,12 @@ library(tseries)
 library(feasts)
 library(fpp3)
 library(corrplot)
+library(patchwork)
+library(fable)
+library(Metrics)
+library(xgboost)
+library(fastDummies)
+library(caret)
 ```
 
 ## Importing the Data
@@ -39,21 +45,53 @@ head(weather_data)
 weather_data$Date <- as.Date(weather_data$Date, format = "%Y-%m-%d")
 str(weather_data$Date)
 ```
+```{r}
+
+weather_data <- weather_data |>
+  mutate(
+    Date = as.Date(Date),  # Convert Date to proper format
+    AvgWindSpeed = (WindSpeed9am + WindSpeed3pm) / 2,
+    AvgHumidity = (Humidity9am + Humidity3pm) / 2,
+    AvgPressure = (Pressure9am + Pressure3pm) / 2,
+    AvgCloud = (Cloud9am + Cloud3pm) / 2,
+    AvgTemp = (Temp9am + Temp3pm) / 2
+  ) %>%
+  group_by(Date, Location) |>
+  summarize(
+    AvgWindSpeed = mean(AvgWindSpeed, na.rm = TRUE),
+    AvgHumidity = mean(AvgHumidity, na.rm = TRUE),
+    AvgPressure = mean(AvgPressure, na.rm = TRUE),
+    AvgCloud = mean(AvgCloud, na.rm = TRUE),
+    AvgTemp = mean(AvgTemp, na.rm = TRUE),
+    MinTemp = mean(MinTemp, na.rm = TRUE),
+    MaxTemp = mean(MaxTemp, na.rm = TRUE),
+    Rainfall = sum(Rainfall, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    Rained = ifelse(Rainfall > 0, 1, 0)  # Binary column: 1 if Rainfall > 0, else 0
+  ) 
+
+df <- weather_data
+
+weather_data |>
+  as_tsibble(index = Date, key = Location)
+
+
+head(weather_data)
+str(weather_data)
+
+```
+
+```{r}
+```
+
 ## Arrange the date
 
 ```{r}
-weather_data <- weather_data |>
-  arrange(Date)
-
-# Group by Date and calculate the mean of Rainfall
-rainfall_by_date <- weather_data |>
-  group_by(Date) |>
-  summarise(mean_rainfall = mean(Rainfall, na.rm = TRUE))
-
-# Plot the data
-ggplot(rainfall_by_date, aes(x = Date, y = mean_rainfall)) +
+ggplot(weather_data, aes(x = Date, y = Rainfall)) +
   geom_line() +
-  labs(title = "Mean Rainfall by Date", x = "Date", y = "Mean Rainfall (mm)") +
+  labs(title = "Rainfall by Date", x = "Date", y = "Mean Rainfall (mm)") +
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   theme(plot.title = element_text(hjust = 0.5)) +
@@ -61,10 +99,7 @@ ggplot(rainfall_by_date, aes(x = Date, y = mean_rainfall)) +
 ```
 ```{r}
 # Numeric features
-numeric_features <- weather_data[c("MinTemp", "MaxTemp", "Rainfall", "Evaporation", "Sunshine", 
-                                   "WindGustSpeed", "WindSpeed9am", "WindSpeed3pm", "Humidity9am", 
-                                   "Humidity3pm", "Pressure9am", "Pressure3pm", "Cloud9am", 
-                                   "Cloud3pm", "Temp9am", "Temp3pm")]
+numeric_features <- weather_data[c("AvgWindSpeed", "AvgHumidity", "AvgPressure", "AvgCloud", "MinTemp", "MaxTemp", "Rainfall", "AvgTemp")]
 
 # Calculate the correlation matrix for all numeric columns
 cor_matrix <- cor(numeric_features, use = "complete.obs")
@@ -87,11 +122,7 @@ corrplot(cor_matrix,
 
 ```{r}
 # List of features to plot against Rainfall
-features <- c("MinTemp", "MaxTemp", "Evaporation", "Sunshine", 
-              "WindGustSpeed", "WindSpeed9am", "WindSpeed3pm", 
-              "Humidity9am", "Humidity3pm", "Pressure9am", 
-              "Pressure3pm", "Cloud9am", "Cloud3pm", "Temp9am", 
-              "Temp3pm")
+features <- c("AvgWindSpeed", "AvgHumidity", "AvgPressure", "AvgCloud", "MinTemp", "MaxTemp", "Rainfall", "AvgTemp")
 
 # Check for missing values in these columns and impute the mean if there are any
 weather_data[features] <- suppressWarnings(weather_data[features] |>
@@ -121,8 +152,9 @@ for (feature in features) {
 ## Relevant features based on corr plot above: 
 ## "MinTemp", "WindGustSpeed", "WindSpeed9am", "WindSpeed3pm", "Humidity9am", "Humidity3pm", "Cloud9am", "Cloud3pm"
 
+
 weather_data_mod <- weather_data |>
-  select(Date, Location, Rainfall, MinTemp, WindGustSpeed, WindSpeed9am, WindSpeed3pm,Humidity9am, Humidity3pm,Cloud9am,Cloud3pm, RainTomorrow)
+  select(Date, Location, Rainfall, MinTemp, AvgWindSpeed, AvgHumidity, AvgPressure, AvgCloud, MinTemp, MaxTemp, Rainfall, AvgTemp, Rained)
 ```
 
 ## Specific Cities Filtered
@@ -142,14 +174,14 @@ colSums(is.na(weather_data_mod))
 ## Drop rows with missing Values from Rainfall or RainTomorrow
 
 ```{r}
-weather_data_mod <- weather_data_mod |> drop_na(Rainfall, RainTomorrow)
+weather_data_mod <- weather_data_mod |> drop_na(Rainfall)
 ```
 
 ## Impute other columns using the mean
 
 ```{r}
 weather_data_mod$MinTemp[is.na(weather_data_mod$MinTemp)] <- mean(weather_data_mod$MinTemp, na.rm = TRUE)
-weather_data_mod$MaxTemp[is.na(weather_data_mod$MaxTemp)] <- mean(weather_data_mod$MaxTemp, na.rm = TRUE)
+
 ```
 
 ## Verify Data Types
@@ -162,17 +194,30 @@ colnames(weather_data_mod)
 ## Aggregate Weekly Rainfall
 
 ```{r}
-weather_data_weekly <- weather_data_mod |>
-  mutate(Week = floor_date(Date, "week")) |>
-  group_by(Location, Week) |>
-  summarize(WeeklyRainfall = sum(Rainfall, na.rm = TRUE)) |>
-  ungroup()
+weather_data_weekly <- weather_data_processed %>%
+  mutate(Week = floor_date(ymd(Date), "week")) %>%
+  group_by(Location, Week) %>%
+  summarize(
+    WeeklyRainfall = sum(Rainfall, na.rm = TRUE),
+    AvgWeeklyWindSpeed = mean(AvgWindSpeed, na.rm = TRUE),
+    AvgWeeklyHumidity = mean(AvgHumidity, na.rm = TRUE),
+    AvgWeeklyPressure = mean(AvgPressure, na.rm = TRUE),
+    AvgWeeklyCloud = mean(AvgCloud, na.rm = TRUE),
+    AvgWeeklyTemp = mean(AvgTemp, na.rm = TRUE),
+    MinWeeklyTemp = mean(MinTemp, na.rm = TRUE),
+    MaxWeeklyTemp = mean(MaxTemp, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+# View the processed weekly data
+print(weather_data_weekly)
+
 ```
 
 ## Differencing for stationarity
 
 ```{r}
-weather_data_mod<- weather_data_mod |>
+weather_data_mod <- weather_data_mod |>
   group_by(Location) |>
   mutate(Diff_Rainfall = c(NA, diff(Rainfall))) |>
   ungroup()
@@ -189,25 +234,21 @@ head(weather_data_mod)
 ## Time Series Plot
 
 ```{r}
-# Filter data for a specific location (e.g., Sydney)
-sydney_weather <- weather_data_mod |>
+sydney_weather <- weather_data_processed |>
   filter(Location == "Sydney") |>
   select(Date, Rainfall) |>
   drop_na(Rainfall)
 
-# Convert to tsibble
 sydney_weather_tsibble <- sydney_weather |>
-  mutate(Date = yearmonth(Date)) |>
+  mutate(Date = as.Date(Date)) |>
   as_tsibble(index = Date)
 
-# Plot the time series using autoplot
 sydney_weather_tsibble |>
   autoplot(Rainfall) +
   labs(title = "Rainfall Time Series for Sydney",
        x = "Time",
        y = "Rainfall (mm)") +
   theme_minimal()
-
 ```
 
 
@@ -262,65 +303,152 @@ acf_plot_Sydney
 max(weather_data_mod$Date)
 min(weather_data_mod$Date)
 
-train <- weather_data_mod |>
-  filter(Date >= as.Date("2008-02-03") & Date <= as.Date("2015-06-24") )
+# Function to filter and deselect
+filter_data <- function(data, start_date, end_date) {
+  data %>%
+    filter(Date >= as.Date(start_date) & Date <= as.Date(end_date)) %>%
+    select(Location, Date, Rainfall, MinTemp, AvgWindSpeed, AvgHumidity, AvgPressure, AvgCloud, MinTemp, MaxTemp, Rainfall, AvgTemp, Rained)
+}
 
-test <- weather_data_mod |>
-  filter(Date >= as.Date("2015-06-25") & Date <= as.Date("2017-06-25"))
+# Apply function to create train and test sets
+train <- filter_data(df, "2008-02-03", "2015-06-24")
+test <- filter_data(df, "2015-06-25", "2017-06-25")
+
+```
+
+## splitting by city
+```{r}
+## Training and test sets for each city (Perth, Darwin, Sydney, and Melbourne)
+train_perth <- train |> 
+  filter(Location == "Perth")
+train_darwin <- train |> 
+  filter(Location == "Darwin")
+train_sydney <- train |> 
+  filter(Location == "Sydney")
+train_melbourne <- train |> 
+  filter(Location == "Melbourne")
+
+test_perth <- test |> 
+  filter(Location == "Perth")
+test_darwin <- test |> 
+  filter(Location == "Darwin")
+test_sydney <- test |> 
+  filter(Location == "Sydney")
+test_melbourne <- test |> 
+  filter(Location == "Melbourne")
+
+head(train_darwin)
+```
+
+```{r}
+generate_acf_plot <- function(data, location, title_prefix = "ACF of Rainfall") {
+  data %>%
+    filter(Location == location) %>%
+    select(Date, Rainfall) %>%
+    drop_na(Rainfall) %>%
+    mutate(Date = as.Date(Date)) %>%
+    as_tsibble(index = Date) %>%
+    fill_gaps(Rainfall = NA) %>%
+    ACF(Rainfall) %>%
+    autoplot() +
+    labs(
+      title = paste(title_prefix, "for", location),
+      x = "Lag",
+      y = "ACF"
+    ) +
+    theme_minimal()
+}
+
+acf_train_perth <- generate_acf_plot(train, "Perth", "ACF of Rainfall (Train)")
+acf_train_darwin <- generate_acf_plot(train, "Darwin", "ACF of Rainfall (Train)")
+acf_train_sydney <- generate_acf_plot(train, "Sydney", "ACF of Rainfall (Train)")
+acf_train_melbourne <- generate_acf_plot(train, "Melbourne", "ACF of Rainfall (Train)")
+
+(acf_train_perth | acf_train_darwin) /
+(acf_train_sydney | acf_train_melbourne)
+
 
 ```
 
 
 ```{r}
-weekly_rainfall <- train |>
-  mutate(Week = floor_date(Date, "week")) |>
-  group_by(Week) |>                          
-  summarize(WeeklyRainfall = sum(Rainfall, na.rm = TRUE))
+acf_test_perth <- generate_acf_plot(test, "Perth", "ACF of Rainfall (Test)")
+acf_test_darwin <- generate_acf_plot(test, "Darwin", "ACF of Rainfall (Test)")
+acf_test_sydney <- generate_acf_plot(test, "Sydney", "ACF of Rainfall (Test)")
+acf_test_melbourne <- generate_acf_plot(test, "Melbourne", "ACF of Rainfall (Test)")
 
-weekly_rainfall_test <- test |>
-  mutate(Week = floor_date(Date, "week")) |>
-  group_by(Week) |>                          
-  summarize(WeeklyRainfall = sum(Rainfall, na.rm = TRUE))
-
-weekly_rainfall |>
-  ggplot(aes(x = Week, y = WeeklyRainfall)) +
-  geom_line() +
-  theme_minimal() +
-  labs(title = "Railfall over time", x = "Date", y = "Rainfall")
-
-weekly_rainfall_test |>
-  ggplot(aes(x = Week, y = WeeklyRainfall)) +
-  geom_line() +
-  theme_minimal() +
-  labs(title = "Railfall over time (Test set)", x = "Date", y = "Rainfall")
-
+(acf_test_perth | acf_test_darwin) /
+(acf_test_sydney | acf_test_melbourne)
 ```
 
 ## Exploratory Data Analysis?
 
 ```{r}
-train <- train |>
-  group_by(Date) |>
-  summarize(Rainfall = sum(Rainfall, na.rm = TRUE)) |>  # Aggregate rainfall
-  ungroup()
 
-train <- train |>
-  distinct(Date, .keep_all = TRUE)
+fit_xgboost <- function(train_data, test_data) {
+  # Prepare the data
+  train_matrix <- prepare_xgb_data(train_data)
+  test_matrix <- prepare_xgb_data(test_data)
+  
+  # Target variable
+  train_labels <- as.numeric(train_data$Rained)
+  test_labels <- as.numeric(test_data$Rained)
+  
+  # Fit XGBoost model
+  model <- xgboost(
+    data = train_matrix,
+    label = train_labels,
+    nrounds = 100,
+    objective = "binary:logistic",
+    verbose = 0
+  )
+  
+  # Predict on the test set
+  test_predictions <- predict(model, test_matrix)
+  test_predictions_binary <- ifelse(test_predictions > 0.5, 1, 0)
+  
+  # Generate confusion matrix
+  confusion <- confusionMatrix(
+    factor(test_predictions_binary),
+    factor(test_labels),
+    positive = "1"
+  )
+  
+  return(list(model = model, confusion = confusion))
+}
 
-train <- train |>
-  mutate(Diff_Rainfall = difference(Rainfall)) |>
-  filter(!is.na(Diff_Rainfall)) |>
-  as_tsibble(index = Date) |>
-  fill_gaps()
+# Locations and datasets
+train_test_data <- list(
+  Perth = list(train = train_perth, test = test_perth),
+  Darwin = list(train = train_darwin, test = test_darwin),
+  Sydney = list(train = train_sydney, test = test_sydney),
+  Melbourne = list(train = train_melbourne, test = test_melbourne)
+)
 
-acf_plot <- train |>
-  ACF(Diff_Rainfall) |>
-  autoplot() +
-  labs(title = "ACF of Differenced Weekly Rainfall", y = "ACF", x = "Lag") +
-  theme_minimal()
+# Fit models and generate confusion matrices
+results <- lapply(names(train_test_data), function(location) {
+  cat("\nProcessing", location, "...\n")
+  train_data <- train_test_data[[location]]$train
+  test_data <- train_test_data[[location]]$test
+  fit_xgboost(train_data, test_data)
+})
 
-acf_plot
+# Print confusion matrices for each location
+names(results) <- names(train_test_data)
+lapply(names(results), function(location) {
+  cat("\nConfusion Matrix for", location, ":\n")
+  print(results[[location]]$confusion)
+})
+
+
+```
+```{r}
+head(test_darwin)
 ```
 
+## Splitting by city
+```{r}
+str(train_perth)
+```
 
 
