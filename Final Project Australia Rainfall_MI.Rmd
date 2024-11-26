@@ -117,7 +117,6 @@ corrplot(cor_matrix,
          diag = FALSE,  
          tl.col = "black")  
 ```
-## Corr Plot shows that Features MinTemp, WindGustSpeed columns, Humidity columns, and Cloud columns have notable corrrelations to Rainfall
 
 ## Scatter plot features vs Rainfall
 
@@ -194,7 +193,7 @@ colnames(weather_data_mod)
 
 ## Aggregate Weekly Rainfall
 
-```{r}
+
 weather_data_weekly <- weather_data_processed %>%
   mutate(Week = floor_date(ymd(Date), "week")) %>%
   group_by(Location, Week) %>%
@@ -211,9 +210,9 @@ weather_data_weekly <- weather_data_processed %>%
   )
 
 # View the processed weekly data
-print(weather_data_weekly)
+#print(weather_data_weekly)
 
-```
+
 
 ## Differencing for stationarity
 
@@ -253,10 +252,12 @@ sydney_weather_tsibble |>
 ```
 
 
+
 ## Split data by city
 
 ```{r}
 weather_data_splits <- split(weather_data_mod, weather_data_mod$Location)
+
 ```
 
 ## Perform decomposition of each city next
@@ -266,21 +267,22 @@ sydney_data <- weather_data_splits$Sydney
 sydney_ts <- sydney_data |>
   as_tsibble(index = Date) |>
   fill_gaps()
+
 ```
 
 # Perform Decomposition Sydney
 
 ```{r}
-##sydney_decomposition <- sydney_ts |>
-  ##model(STL(Rainfall ~ season(window = 13))) |>
-  ##components()
+sydney_decomposition <- sydney_ts |>
+  model(STL(Rainfall ~ season(window = 13))) |>
+  components()
 ```
 
 # Plot Decomposition
 
 ```{r}
-##autoplot(sydney_decomposition) +
-  ##labs(title = "STL Decomposition of Rainfall in Sydney", y = "")
+autoplot(sydney_decomposition) +
+  labs(title = "STL Decomposition of Rainfall in Sydney", y = "")
 ```
 
 # acf plot Sydney
@@ -554,3 +556,6 @@ prediction_plots <- lapply(names(weather_data_splits), function(city) {
 # Combine and display all plots using patchwork
 Reduce(`/`, prediction_plots)
 ```
+
+
+
