@@ -24,7 +24,6 @@ library(caret)
 library(forecast)
 library(kableExtra)
 library(purrr)
-library(knitr)
 ```
 
 ## Importing the Data
@@ -180,8 +179,6 @@ colSums(is.na(weather_data_monthly))
 # Split the data into train and test sets
 
 ```{r}
-set.seed(123)
-
 train_data <- weather_data_monthly |> 
   filter(year_month >= yearmonth("2007 Nov") & year_month <= yearmonth("2015 Jun"))
 
@@ -321,7 +318,8 @@ for (city in cities) {
 ## ARIMA MODELLING
 
 ```{r}
-set.seed(123)
+# Ensure knitr package is loaded
+library(knitr)
 
 # Initialize an empty list to store ARIMA models for each city
 city_results <- list()
@@ -399,8 +397,6 @@ kable(arima_summary_df, caption = "ARIMA Model Summary for Each City") |>
 ## Assess ARIMA Forecast Accuracy on Test Data
 
 ```{r}
-set.seed(123)
-
 # List of cities
 cities <- c("Sydney", "Perth", "Darwin", "Melbourne")
 
@@ -466,8 +462,6 @@ forecast_table %>%
 # Perth had best ARIMA results, plot forecasted and actual values
 
 ```{r}
-set.seed(123)
-
 # Filter data for Perth
 city_train_data <- train_data |> filter(Location == "Perth")
 city_test_data <- test_data |> filter(Location == "Perth")
@@ -502,12 +496,9 @@ ggplot(forecast_df, aes(x = Date)) +
 
 ## Modelling
 
-
 ## XGBoost
 
 ```{r}
-set.seed(123)
-
 # Loop through each city to train and assess the model
 # List of cities
 cities <- c("Sydney", "Perth", "Darwin", "Melbourne")
@@ -618,8 +609,6 @@ ggplot() +
 ## Linear Regression
 
 ```{r}
-set.seed(123)
-
 # Loop through each city to train and assess the model
 # List of cities
 cities <- c("Sydney", "Perth", "Darwin", "Melbourne")
@@ -707,93 +696,89 @@ ggplot() +
   theme(legend.title = element_blank(), legend.position = "bottom")
 ```
 
+```{r}
+# Initialize a list to store results for each city
+nnar_results <- list()
+
+# Loop through each city
+for (city in cities) {
+  # Filter training and testing data for the city
+  city_train_data <- train_data |> filter(Location == city)
+  city_test_data <- test_data |> filter(Location == city)
+  
+  # Ensure data exists for the city
+  if (nrow(city_train_data) == 0 || nrow(city_test_data) == 0) {
+    message(paste("No data available for", city, "- Skipping."))
+    next
+  }
+  
+  # Convert training data to a tsibble
+  city_train_tsibble <- city_train_data |> 
+    as_tsibble(index = year_month)
+  
+  # Fit NNAR model
+  nnar_model <- city_train_tsibble |>
+    model(NNETAR(Rainfall ~ lag(12)))
+  
+  # Forecast on test data
+  nnar_forecast <- nnar_model |>
+    forecast(h = nrow(city_test_data))
+  
+  # Compute accuracy on test data
+  accuracy_metrics <- nnar_forecast |>
+    accuracy(city_test_data)
+  
+  # Store the results
+  nnar_results[[city]] <- list(
+    model = nnar_model,
+    forecast = nnar_forecast,
+    accuracy = accuracy_metrics
+  )
+  
+  # Plot the forecast
+  autoplot(nnar_forecast, city_test_data) +
+    labs(title = paste("NNAR Forecast vs Actual for", city),
+         x = "Year-Month", y = "Rainfall (mm)") +
+    theme_minimal() +
+    theme(legend.position = "bottom") |> print()
+}
+
+```
+
 ## Plot Table Summary of Models
 
 ```{r}
-# Initialize an empty data frame to store performance metrics
-performance_table <- data.frame(
-  Model = character(),
-  City = character(),
-  RMSE = numeric(),
-  MAE = numeric(),
-  stringsAsFactors = FALSE
+# Safely extract metrics
+extract_metric <- function(results, metric) {
+  map_dbl(results, ~ if (!is.null(.x) && !is.null(.x$accuracy[[metric]])) .x$accuracy[[metric]] else NA_real_)
+}
+
+# Tabulate RMSE and MAE
+performance_table <- tibble(
+  City = cities,
+  ARIMA_RMSE = extract_metric(city_results, "RMSE"),
+  LR_RMSE = map_dbl(predictions_list, ~ if (!is.null(.x)) sqrt(mean((.x$actual - .x$predicted)^2, na.rm = TRUE)) else NA_real_),
+  XGB_RMSE = map_dbl(predictions_list, ~ if (!is.null(.x)) sqrt(mean((.x$actual - .x$predicted)^2, na.rm = TRUE)) else NA_real_),
+  NNETAR_RMSE = extract_metric(nnar_results, "RMSE"),
+  ARIMA_MAE = extract_metric(city_results, "MAE"),
+  LR_MAE = map_dbl(predictions_list, ~ if (!is.null(.x)) mean(abs(.x$actual - .x$predicted), na.rm = TRUE) else NA_real_),
+  XGB_MAE = map_dbl(predictions_list, ~ if (!is.null(.x)) mean(abs(.x$actual - .x$predicted), na.rm = TRUE) else NA_real_),
+  NNETAR_MAE = extract_metric(nnar_results, "MAE")
 )
 
-# Function to add metrics to the performance table
-add_metrics <- function(model_name, city, rmse_value, mae_value) {
-  performance_table <<- rbind(
-    performance_table,
-    data.frame(
-      Model = model_name,
-      City = city,
-      RMSE = round(rmse_value, 3),
-      MAE = round(mae_value, 3),
-      stringsAsFactors = FALSE
-    )
-  )
-}
-
-# List of cities to process
-cities <- c("Sydney", "Perth", "Darwin", "Melbourne")
-
-# Add ARIMA results
-for (city in cities) {
-  if (city %in% names(city_results) && !is.null(city_results[[city]]$arima_model)) {
-    city_test_data <- test_data |> filter(Location == city)
-    forecast_steps <- nrow(city_test_data)
-    if (forecast_steps > 0) {
-      arima_model <- city_results[[city]]$arima_model
-      arima_forecast <- forecast(arima_model, h = forecast_steps)
-      test_actuals <- city_test_data$Rainfall
-      rmse_value <- sqrt(mean((test_actuals - arima_forecast$mean)^2, na.rm = TRUE))
-      mae_value <- mean(abs(test_actuals - arima_forecast$mean), na.rm = TRUE)
-      add_metrics("ARIMA", city, rmse_value, mae_value)
-    }
-  }
-}
-
-# Add XGBoost results dynamically
-for (city in cities) {
-  if (city %in% names(predictions_list)) {
-    xgboost_predictions <- predictions_list[[city]]$predicted
-    xgboost_actuals <- predictions_list[[city]]$actual
-    if (!is.null(xgboost_predictions) && !is.null(xgboost_actuals)) {
-      rmse_value <- sqrt(mean((xgboost_actuals - xgboost_predictions)^2, na.rm = TRUE))
-      mae_value <- mean(abs(xgboost_actuals - xgboost_predictions), na.rm = TRUE)
-      add_metrics("XGBoost", city, rmse_value, mae_value)
-    }
-  }
-}
-
-# Add Linear Regression results dynamically
-for (city in cities) {
-  if (city %in% names(predictions_list)) {
-    linear_predictions <- predictions_list[[city]]$predicted
-    linear_actuals <- predictions_list[[city]]$actual
-    if (!is.null(linear_predictions) && !is.null(linear_actuals)) {
-      rmse_value <- sqrt(mean((linear_actuals - linear_predictions)^2, na.rm = TRUE))
-      mae_value <- mean(abs(linear_actuals - linear_predictions), na.rm = TRUE)
-      add_metrics("Linear Regression", city, rmse_value, mae_value)
-    }
-  }
-}
-
-# Display the performance table
+# Display the table
 performance_table %>%
   kbl(
-    col.names = c("Model", "City", "RMSE", "MAE"),
-    caption = "Performance Metrics Across Models for Selected Cities",
-    align = "lccc"
+    col.names = c("City", "ARIMA RMSE", "LR RMSE", "XGB RMSE", "NNETAR RMSE",
+                  "ARIMA MAE", "LR MAE", "XGB MAE", "NNETAR MAE"),
+    caption = "Performance Metrics Comparison Across Models",
+    align = "lcccccccc"
   ) %>%
-  kable_styling(
-    bootstrap_options = c("striped", "hover", "condensed", "responsive"),
-    full_width = FALSE,
-    position = "center"
-  )
+  kable_styling(full_width = FALSE, bootstrap_options = c("striped", "hover", "condensed", "responsive"))
 ```
 
 
-# old code
+
 #```{r}
 # Create a consolidated comparison table
 comparison_table <- data.frame(
