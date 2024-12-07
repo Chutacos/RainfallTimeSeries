@@ -482,22 +482,30 @@ arima_model <- auto.arima(rainfall_train_ts)
 forecast_steps <- nrow(city_test_data)
 arima_forecast <- forecast(arima_model, h = forecast_steps)
 
-# Create a data frame for the forecast and actual values
+# Create a data frame for the forecast, actual values, and confidence intervals
 forecast_df <- data.frame(
   Date = city_test_data$year_month,
   Forecast = arima_forecast$mean,
-  Actual = city_test_data$Rainfall
+  Actual = city_test_data$Rainfall,
+  Lower80 = arima_forecast$lower[, 1],  # 80% CI lower bound
+  Upper80 = arima_forecast$upper[, 1],  # 80% CI upper bound
+  Lower90 = arima_forecast$lower[, 2],  # 90% CI lower bound
+  Upper90 = arima_forecast$upper[, 2]   # 90% CI upper bound
 )
 
-# Plot the forecasted vs actual values using ggplot2
+# Plot the forecasted vs actual values with confidence intervals
+suppressWarnings(
 ggplot(forecast_df, aes(x = Date)) +
-  geom_line(aes(y = Forecast, color = "Forecast"), size = 1) +    # Forecast line in blue
-  geom_line(aes(y = Actual, color = "Actual"), size = 1) +         # Actual data line in red
-  labs(title = "ARIMA Forecast vs Actuals for Perth",
+  geom_ribbon(aes(ymin = Lower90, ymax = Upper90), fill = "lightblue", alpha = 0.2) +  # 90% Confidence intervals
+  geom_ribbon(aes(ymin = Lower80, ymax = Upper80), fill = "lightblue", alpha = 0.4) +  # 80% Confidence intervals
+  geom_line(aes(y = Forecast, color = "Forecast"), size = 1) +                   # Forecast line
+  geom_line(aes(y = Actual, color = "Actual"), size = 1) +                       # Actual data line
+  labs(title = "ARIMA Forecast with 80% and 90% Confidence Intervals for Perth",
        x = "Date", y = "Rainfall (mm)") +
-  scale_color_manual(values = c("Forecast" = "blue", "Actual" = "red")) + # Set colors
+  scale_color_manual(values = c("Forecast" = "blue", "Actual" = "black")) +       # Set colors
   theme_minimal() +
-  theme(legend.title = element_blank(), legend.position = "bottom") # Position legend
+  theme(legend.title = element_blank(), legend.position = "bottom")             # Position legend
+)
 ```
 
 ## Modelling
@@ -596,11 +604,7 @@ for (city in cities) {
 
 # Print the forecast accuracy results
 print(forecast_results)
-```
 
-# Melbourne had best results on XGBoost, plot forecasted and actual values
-
-```{r}
 # Extract the predictions for Melbourne from predictions_list
 melbourne_predictions <- predictions_list[["Melbourne"]]
 
@@ -610,10 +614,15 @@ ggplot() +
   geom_line(aes(x = melbourne_predictions$date, y = melbourne_predictions$predicted, color = "Predicted"), size = 1) +
   labs(title = "XGBoost Prediction vs Actual Rainfall for Melbourne",
        x = "Date", y = "Rainfall (mm)") +
-  scale_color_manual(values = c("Actual" = "red", "Predicted" = "blue")) +
+  scale_color_manual(values = c("Actual" = "black", "Predicted" = "blue")) +
   theme_minimal() +
   theme(legend.title = element_blank(), legend.position = "bottom")
+
 ```
+
+# Melbourne had best results on XGBoost, plot forecasted and actual values
+
+
 
 ## Linear Regression
 
@@ -702,10 +711,11 @@ ggplot() +
   geom_line(aes(x = melbourne_predictions$date, y = melbourne_predictions$predicted, color = "Predicted"), size = 1) +
   labs(title = "Linear Regression Prediction vs Actual Rainfall for Melbourne",
        x = "Date", y = "Rainfall (mm)") +
-  scale_color_manual(values = c("Actual" = "red", "Predicted" = "blue")) +
+  scale_color_manual(values = c("Actual" = "grey", "Predicted" = "blue")) +
   theme_minimal() +
   theme(legend.title = element_blank(), legend.position = "bottom")
 ```
+
 
 ## Plot Table Summary of Models
 
